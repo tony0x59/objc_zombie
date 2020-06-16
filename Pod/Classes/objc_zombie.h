@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+/*
+ Source Code from:
+ https://source.chromium.org/chromium/chromium/src/+/master:components/crash/core/common/objc_zombie.mm
+ commitid acd3f7c justincohen@google.com 2019-06-05 10:39 +08:00 [ios] Get things compiling on Xcode 11.
+*/
+
 #ifndef COMPONENTS_CRASH_CORE_COMMON_OBJC_ZOMBIE_H_
 #define COMPONENTS_CRASH_CORE_COMMON_OBJC_ZOMBIE_H_
 
