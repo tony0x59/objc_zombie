@@ -1,0 +1,25 @@
+
+# We don't use Swift internally. Disable this option.
+#use_frameworks!
+
+
+# Add global dependencies here.
+
+target 'ObjcZombie_Example' do
+  # If ObjcZombie depends on any private pod, remember to use `local_pod`
+  # to refer it explicitly.
+  # CocoaPods cannot distinguish public and private pod from podspec right now,
+  # it's required to do so in Podfile.
+  #
+  # Add Example specific dependencies here...
+
+  pod "ObjcZombie", :path => "../"
+end
+
+target 'ObjcZombie_Tests' do
+  # Add Tests specific dependencies here...
+
+  pod "ObjcZombie", :path => "../"
+
+  
+end
