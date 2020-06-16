@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import "components/crash/core/common/objc_zombie.h"
+#import "objc_zombie.h"
 
 #include <AvailabilityMacros.h>
 #include <string.h>
@@ -12,18 +12,38 @@
 
 #include <algorithm>
 
-#include "base/debug/stack_trace.h"
-#include "base/logging.h"
-#include "base/posix/eintr_wrapper.h"
-#include "base/strings/stringprintf.h"
-#include "base/synchronization/lock.h"
-#include "build/build_config.h"
-#include "components/crash/core/common/crash_key.h"
-#include "components/gwp_asan/buildflags/buildflags.h"
+//#include "base/debug/stack_trace.h"
+//#include "base/logging.h"
+//#include "base/posix/eintr_wrapper.h"
+//#include "base/strings/stringprintf.h"
+//#include "base/synchronization/lock.h"
+//#include "build/build_config.h"
+//#include "components/crash/core/common/crash_key.h"
+//#include "components/gwp_asan/buildflags/buildflags.h"
 
-#if BUILDFLAG(ENABLE_GWP_ASAN_MALLOC)
-#include "components/gwp_asan/client/sampling_malloc_shims.h"  // nogncheck
-#endif
+//#if BUILDFLAG(ENABLE_GWP_ASAN_MALLOC)
+//#include "components/gwp_asan/client/sampling_malloc_shims.h"  // nogncheck
+//#endif
+
+#define CHECK(x) \
+    if (!(x)) printf("Check failed: %s, %s, %d\n", #x, __FILE__, __LINE__)
+#define CHECK_EQ(x, y) CHECK((x) == (y))
+#define CHECK_NE(x, y) CHECK((x) != (y))
+#define CHECK_LE(x, y) CHECK((x) <= (y))
+#define CHECK_LT(x, y) CHECK((x) < (y))
+#define CHECK_GE(x, y) CHECK((x) >= (y))
+#define CHECK_GT(x, y) CHECK((x) > (y))
+
+#define DCHECK(x) CHECK(x)
+#define DCHECK_EQ(x, y) CHECK_EQ(x, y)
+#define DCHECK_NE(x, y) CHECK_NE(x, y)
+#define DCHECK_LE(x, y) CHECK_LE(x, y)
+#define DCHECK_LT(x, y) CHECK_LT(x, y)
+#define DCHECK_GE(x, y) CHECK_GE(x, y)
+#define DCHECK_GT(x, y) CHECK_GT(x, y)
+
+#import <pthread.h>
+#import <Foundation/Foundation.h>
 
 // Deallocated objects are re-classed as |CrZombie|.  No superclass
 // because then the class would have to override many/most of the
@@ -81,9 +101,13 @@ size_t g_fatZombieSize = 0;
 BOOL g_zombieAllObjects = NO;
 
 // Protects |g_zombieCount|, |g_zombieIndex|, and |g_zombies|.
-base::Lock& GetLock() {
-  static auto* lock = new base::Lock();
-  return *lock;
+//base::Lock& GetLock() {
+//  static auto* lock = new base::Lock();
+//  return *lock;
+//}
+pthread_mutex_t* GetLock() {
+    static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    return &mutex;
 }
 
 // How many zombies to keep before freeing, and the current head of
@@ -108,11 +132,11 @@ void ZombieDealloc(id self, SEL _cmd) {
 
   // Use the original |-dealloc| if the object doesn't wish to be
   // zombied or GWP-ASan is the backing allocator.
-#if BUILDFLAG(ENABLE_GWP_ASAN_MALLOC)
-  bool gwp_asan_allocation = gwp_asan::IsGwpAsanMallocAllocation(self);
-#else
+//#if BUILDFLAG(ENABLE_GWP_ASAN_MALLOC)
+//  bool gwp_asan_allocation = gwp_asan::IsGwpAsanMallocAllocation(self);
+//#else
   bool gwp_asan_allocation = false;
-#endif
+//#endif
   if ((!g_zombieAllObjects && ![self shouldBecomeCrZombie]) ||
       gwp_asan_allocation) {
     g_originalDeallocIMP(self, _cmd);
@@ -156,7 +180,7 @@ void ZombieDealloc(id self, SEL _cmd) {
 
   // Don't involve the lock when creating zombies without a treadmill.
   if (g_zombieCount > 0) {
-    base::AutoLock pin(GetLock());
+    pthread_mutex_lock(GetLock());
 
     // Check the count again in a thread-safe manner.
     if (g_zombieCount > 0) {
@@ -167,6 +191,8 @@ void ZombieDealloc(id self, SEL _cmd) {
       // Bump the index forward.
       g_zombieIndex = (g_zombieIndex + 1) % g_zombieCount;
     }
+      
+    pthread_mutex_unlock(GetLock());
   }
 
   // Do the free out here to prevent any chance of deadlock.
@@ -179,13 +205,14 @@ void ZombieDealloc(id self, SEL _cmd) {
 BOOL GetZombieRecord(id object, ZombieRecord* record) {
   // Holding the lock is reasonable because this should be fast, and
   // the process is going to crash presently anyhow.
-  base::AutoLock pin(GetLock());
+  pthread_mutex_lock(GetLock());
   for (size_t i = 0; i < g_zombieCount; ++i) {
     if (g_zombies[i].object == object) {
       *record = g_zombies[i];
       return YES;
     }
   }
+  pthread_mutex_unlock(GetLock());
   return NO;
 }
 
@@ -193,10 +220,18 @@ BOOL GetZombieRecord(id object, ZombieRecord* record) {
 // easy to use DCHECK to dump only in debug builds.
 BOOL DumpDeallocTrace(const void* const* array, int size) {
   // Async-signal safe version of fputs, consistent with StackTrace::Print().
-  const char message[] = "Backtrace from -dealloc:\n";
-  ignore_result(HANDLE_EINTR(write(STDERR_FILENO, message, strlen(message))));
-  base::debug::StackTrace(array, size).Print();
-
+//  const char message[] = "Backtrace from -dealloc:\n";
+//  ignore_result(HANDLE_EINTR(write(STDERR_FILENO, message, strlen(message))));
+//  base::debug::StackTrace(array, size).Print();
+  
+  printf("Backtrace from -dealloc:\n");
+    
+  char** strs = backtrace_symbols((void*const*)array, size);
+  for (int i = 0; i < size; ++i) {
+    printf("%s\n", strs[i]);
+  }
+  free(strs);
+    
   return YES;
 }
 
@@ -219,13 +254,16 @@ void ZombieObjectCrash(id object, SEL aSelector, SEL viaSelector) {
   }
   const char* wasaName = (wasa ? class_getName(wasa) : "<unknown>");
 
-  std::string aString = base::StringPrintf("Zombie <%s: %p> received -%s",
-      wasaName, object, sel_getName(aSelector));
+  printf("Zombie <%s: %p> received -%s", wasaName, object, sel_getName(aSelector));
+//  std::string aString = base::StringPrintf("Zombie <%s: %p> received -%s",
+//      wasaName, object, sel_getName(aSelector));
   if (viaSelector != NULL) {
     const char* viaName = sel_getName(viaSelector);
-    base::StringAppendF(&aString, " (via -%s)", viaName);
+//    base::StringAppendF(&aString, " (via -%s)", viaName);
+      printf(" (via -%s)", viaName);
   }
 
+#if 0
   // Set a value for breakpad to report.
   static crash_reporter::CrashKeyString<256> zombie_key("zombie");
   zombie_key.Set(aString);
@@ -238,15 +276,16 @@ void ZombieObjectCrash(id object, SEL aSelector, SEL viaSelector) {
         &zombie_trace_key,
         base::debug::StackTrace(record.trace, record.traceDepth));
   }
+#endif
 
   // Log -dealloc backtrace in debug builds then crash with a useful
   // stack trace.
   if (found && record.traceDepth) {
     DCHECK(DumpDeallocTrace(record.trace, record.traceDepth));
   } else {
-    DLOG(WARNING) << "Unable to generate backtrace from -dealloc.";
+    printf("Unable to generate backtrace from -dealloc.\n");
   }
-  DLOG(FATAL) << aString;
+//  DLOG(FATAL) << aString;
 
   // This is how about:crash is implemented.  Using instead of
   // |base::debug::BreakDebugger()| or |LOG(FATAL)| to make the top of
@@ -367,7 +406,7 @@ bool ZombieEnable(bool zombieAllObjects,
   ZombieRecord* oldZombies = g_zombies;
 
   {
-    base::AutoLock pin(GetLock());
+    pthread_mutex_lock(GetLock());
 
     // Save the old index in case zombies need to be transferred.
     size_t oldIndex = g_zombieIndex;
@@ -381,7 +420,8 @@ bool ZombieEnable(bool zombieAllObjects,
       g_zombies =
           static_cast<ZombieRecord*>(calloc(g_zombieCount, sizeof(*g_zombies)));
       if (!g_zombies) {
-        NOTREACHED();
+//        NOTREACHED();
+        printf("NOTREACHED!!!\n");
         g_zombies = oldZombies;
         g_zombieCount = oldCount;
         g_zombieIndex = oldIndex;
@@ -405,6 +445,7 @@ bool ZombieEnable(bool zombieAllObjects,
       }
       g_zombieIndex %= g_zombieCount;
     }
+    pthread_mutex_unlock(GetLock());
   }
 
   // Free the old treadmill and any remaining zombies.
@@ -438,9 +479,11 @@ void ZombieDisable() {
   ZombieRecord* oldZombies = g_zombies;
 
   {
-    base::AutoLock pin(GetLock());  // In case any -dealloc are in progress.
+    //base::AutoLock pin(GetLock());  // In case any -dealloc are in progress.
+    pthread_mutex_lock(GetLock());
     g_zombieCount = 0;
     g_zombies = NULL;
+    pthread_mutex_unlock(GetLock());
   }
 
   // Free any remaining zombies.

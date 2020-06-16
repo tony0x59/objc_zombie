@@ -7,6 +7,7 @@
 //
 
 #import "ONEViewController.h"
+#import <ObjcZombie/objc_zombie.h>
 
 @interface ONEViewController ()
 
@@ -18,6 +19,22 @@
 {
     [super viewDidLoad];
 	// Do any additional setup after loading the view, typically from a nib.
+
+    ObjcEvilDoers::ZombieEnable(true, 10 * 1024 * 1024);
+    
+    [self makeItCrash];
+}
+
+- (void)makeItCrash {
+    static NSString *name;
+    NSString *abc = @"fldjflkjsdlfjlsfjlsfj";
+    dispatch_queue_t queue = dispatch_get_global_queue(0, 0);
+    for (int i = 0; i < 10000; i++) {
+        dispatch_async(queue, ^{
+            name = [abc stringByAppendingPathExtension:@"fdfsdfsfdfs"];
+        });
+    }
+    NSLog(@"abcd");
 }
 
 - (void)didReceiveMemoryWarning

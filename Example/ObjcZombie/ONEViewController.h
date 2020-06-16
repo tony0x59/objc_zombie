@@ -6,7 +6,7 @@
 //  Copyright (c) 2014 tony0x59. All rights reserved.
 //
 
-@import UIKit;
+#import <UIKit/UIKit.h>
 
 @interface ONEViewController : UIViewController
 
